@@ -7,6 +7,7 @@ from flask import jsonify
 import datetime
 import pytesseract
 from PIL import Image
+
 import os
 from flask import send_file
 import pandas as pd 
