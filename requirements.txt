@@ -1,0 +1,14 @@
+flask
+mysql-connector-python
+werkzeug
+pytesseract
+Pillow
+pandas
+requests
+fpdf
+matplotlib
+flask-mysqldb
+reportlab
+PyPDF2
+google-generativeai
+gunicorn
