@@ -1,0 +1,137 @@
+# Azure DevOps CI/CD Pipeline for Carbon Footprint Management System
+# This pipeline runs tests, linting, and code quality checks
+
+trigger:
+  branches:
+    include:
+      - main
+      - develop
+  paths:
+    exclude:
+      - README.md
+      - .gitignore
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  pythonVersion: '3.11'
+  
+stages:
+- stage: Test
+  displayName: 'Run Tests and Quality Checks'
+  jobs:
+  - job: Test
+    displayName: 'Test and Lint'
+    steps:
+    - task: UsePythonVersion@0
+      inputs:
+        versionSpec: '$(pythonVersion)'
+      displayName: 'Use Python $(pythonVersion)'
+    
+    - script: |
+        python -m pip install --upgrade pip
+        pip install -r backend/requirements.txt
+        pip install -r backend/requirements-test.txt
+      displayName: 'Install Dependencies'
+    
+    - script: |
+        cd backend
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+      displayName: 'Run Flake8 Linting'
+      continueOnError: true
+    
+    - script: |
+        cd backend
+        pytest tests/ -v --cov=. --cov-report=html --cov-report=xml --cov-report=term-missing --junitxml=junit/test-results.xml
+      displayName: 'Run Pytest with Coverage'
+    
+    - task: PublishTestResults@2
+      inputs:
+        testResultsFiles: 'backend/junit/test-results.xml'
+        testRunTitle: 'Publish Test Results for Python $(pythonVersion)'
+      displayName: 'Publish Test Results'
+      condition: always()
+    
+    - task: PublishCodeCoverageResults@1
+      inputs:
+        codeCoverageTool: 'Cobertura'
+        summaryFileLocation: 'backend/coverage.xml'
+        reportDirectory: 'backend/htmlcov'
+      displayName: 'Publish Code Coverage'
+      condition: always()
+    
+    - task: PublishPipelineArtifact@1
+      inputs:
+        targetPath: 'backend/htmlcov'
+        artifact: 'coverage-report'
+        publishLocation: 'pipeline'
+      displayName: 'Publish Coverage Report'
+      condition: always()
+
+- stage: Build
+  displayName: 'Build Application'
+  jobs:
+  - job: Build
+    displayName: 'Build Flask Application'
+    steps:
+    - task: UsePythonVersion@0
+      inputs:
+        versionSpec: '$(pythonVersion)'
+      displayName: 'Use Python $(pythonVersion)'
+    
+    - script: |
+        python -m pip install --upgrade pip
+        pip install -r backend/requirements.txt
+      displayName: 'Install Dependencies'
+    
+    - script: |
+        echo "Build successful - Flask application is ready"
+        python --version
+        pip list
+      displayName: 'Verify Build'
+    
+    - task: ArchiveFiles@2
+      inputs:
+        rootFolderOrFile: '$(System.DefaultWorkingDirectory)'
+        includeRootFolder: false
+        archiveType: 'zip'
+        archiveFile: '$(Build.ArtifactStagingDirectory)/app.zip'
+        replaceExistingArchive: true
+      displayName: 'Archive Application'
+    
+    - task: PublishBuildArtifacts@1
+      inputs:
+        PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+        ArtifactName: 'drop'
+        publishLocation: 'Container'
+      displayName: 'Publish Build Artifacts'
+
+- stage: Security
+  displayName: 'Security Scanning'
+  jobs:
+  - job: SecurityCheck
+    displayName: 'Security Checks'
+    steps:
+    - task: UsePythonVersion@0
+      inputs:
+        versionSpec: '$(pythonVersion)'
+      displayName: 'Use Python $(pythonVersion)'
+    
+    - script: |
+        pip install bandit safety
+        cd backend
+        bandit -r . -f json -o bandit-report.json || true
+        safety check --json --output safety-report.json || true
+      displayName: 'Run Security Scans'
+      continueOnError: true
+    
+    - task: PublishPipelineArtifact@1
+      inputs:
+        targetPath: 'backend'
+        artifact: 'security-reports'
+        publishLocation: 'pipeline'
+      displayName: 'Publish Security Reports'
+      condition: always()
+
